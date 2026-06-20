@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advertisement in Vienna</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #map { width: 100%; height: 100vh; }
+        
+        .map-title {
+            position: absolute; top: 15px; left: 50%; transform: translateX(-50%); z-index: 1000;
+            background: rgba(255, 255, 255, 0.95); padding: 10px 20px; font-weight: bold;
+            font-size: 18px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); pointer-events: none;
+        }
+
+        .filter-panel {
+            position: absolute; top: 15px; right: 15px; z-index: 1000;
+            background: rgba(255, 255, 255, 0.95); padding: 15px; width: 240px;
+            border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            max-height: 90vh; overflow-y: auto;
+        }
+
+        .panel-section { margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .panel-section h4 { margin: 0 0 10px 0; color: #333; }
+        .filter-group { margin-bottom: 8px; }
+        .filter-group label { display: block; font-size: 11px; font-weight: bold; color: #666; margin-bottom: 2px; }
+        .filter-group select { width: 100%; padding: 5px; border-radius: 4px; border: 1px solid #ccc; font-size: 12px; }
+        
+        .btn {
+            width: 100%; padding: 8px; border: none; border-radius: 4px; 
+            background: #2196F3; color: white; font-weight: bold; cursor: pointer; transition: 0.2s;
+            font-size: 12px;
+        }
+        .btn:hover { background: #0b7dda; }
+        .btn-clear { background: #e74c3c; margin-top: 5px; }
+        .btn-clear:hover { background: #c0392b; }
+        
+        /* Elegant Custom Notification Toast */
+        .custom-toast {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(100px);
+            z-index: 2000; background: #333; color: #fff; padding: 12px 24px;
+            border-radius: 30px; font-size: 13px; font-weight: 500; text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.35); opacity: 0; pointer-events: none;
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s;
+        }
+        .custom-toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+        
+        /* Interactive Popup Styles */
+        .popup-action-btn {
+            width: 100%; padding: 6px; margin-top: 6px; border: none; border-radius: 4px;
+            font-weight: bold; cursor: pointer; font-size: 11px; color: white; transition: 0.2s;
+        }
+        .btn-optimize { background: #2ecc71; }
+        .btn-optimize:hover { background: #27ae60; }
+        .btn-optimize:disabled { background: #95a5a6; cursor: not-allowed; }
+        
+        .popup-select-group { margin-top: 8px; border-top: 1px solid #ddd; padding-top: 8px; }
+        .popup-select-group label { font-size: 11px; font-weight: bold; color: #555; }
+        .popup-select-group select { width: 100%; padding: 4px; font-size: 11px; margin-top: 2px; }
+
+        .chart-container { width: 250px; height: 150px; margin-top: 10px; }
+        .comparison-box {
+            margin-top: 8px; padding: 8px; background: #f9f9f9; 
+            border-left: 4px solid #2196F3; font-size: 12px; color: #444; line-height: 1.4;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="map-title">Advertisement in Josefstadt</div>
+
+    <!-- UI Notification Toast -->
+    <div id="map-toast" class="custom-toast"></div>
+
+    <!-- Sidebar Dashboard -->
+    <div class="filter-panel">
+        <div class="panel-section">
+            <h4>Filter Data</h4>
+            <div class="filter-group">
+                <label>TYPE</label>
+                <select id="filter-type"><option value="all">All Types</option></select>
+            </div>
+            <div class="filter-group">
+                <label>CATEGORY</label>
+                <select id="filter-category"><option value="all">All Categories</option></select>
+            </div>
+            <div class="filter-group">
+                <label>CONDITION</label>
+                <select id="filter-condition"><option value="all">All Conditions</option></select>
+            </div>
+        </div>
+
+        <div class="panel-section" style="border: none; padding: 0; margin: 0;">
+            <h4>Ad Exposure Calculator</h4>
+            <p style="font-size: 12px; color: #555; margin: 0 0 10px 0;">
+                Click "Activate", then click two points on the map to calculate your walking route exposure.
+            </p>
+            <button id="btn-route-toggle" class="btn">Activate Route Mode</button>
+            <button id="btn-route-clear" class="btn btn-clear" style="display:none;">Clear Route</button>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- Core Map Dependencies -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Your survey dataset file -->
+    <script src="Advertisement_in_Vienna_8_Dataset.js"></script>
+    
+    <script>
+        const map = L.map('map').setView([48.2115, 16.3505], 15);
+
+        const osm = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            maxZoom: 20, attribution: '© OpenStreetMap contributors © CARTO'
+        }).addTo(map);
+
+        const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles © Esri' });
+
+        // Mappings
+        const adTypeMap = { 1: "Billboard", 2: "Poster", 3: "Digital Screen", 4: "Shop Window Advertisement", 5: "Banner", 6: "Sticker", 7: "Construction Fence Advertisement", 8: "Free-standing Advertising Column", 9: "Other" };
+        const adCategoryMap = { 1: "Food & Beverage", 2: "Retail / Shopping", 3: "Fashion", 4: "Entertainment / Culture", 5: "Services", 6: "Tourism", 7: "Real Estate", 8: "Education", 10: "Political", 11: "Public Campaign", 12: "Tobacco", 13: "Other", 14: "Betting", 91: "Cafe (own storefront add)", 92: "Food Store (own storefront add)", 93: "Trafik (own storefront add)", 94: "Fashion Store (own storefront add)", 95: "Bank (own storefront add)", 96: "Other (own storefront add)", 98: "Betting (own storefront add)", 99: "Bar (own storefront add)", 131: "Non-Alcoholic", 132: "Alcoholic" };
+        const conditionMap = { 1: "Excellent / New", 2: "Good", 3: "Moderate Wear", 4: "Poor", 5: "Damaged" };
+
+        function populateDropdown(selectId, dataMap) {
+            const select = document.getElementById(selectId);
+            for (let key in dataMap) {
+                let option = document.createElement("option");
+                option.value = key; option.textContent = dataMap[key]; select.appendChild(option);
+            }
+        }
+        populateDropdown("filter-type", adTypeMap);
+        populateDropdown("filter-category", adCategoryMap);
+        populateDropdown("filter-condition", conditionMap);
+
+        let allFeaturesMemory = [];
+
+        const dataLayer = L.geoJSON(null, {
+            pointToLayer: function (feature, latlng) {
+                return L.circleMarker(latlng, { radius: 5, fillColor: "#ff3333", color: "#fff", weight: 1, opacity: 1, fillOpacity: 0.85 });
+            },
+            onEachFeature: function (feature, layer) {
+                if (feature.properties) {
+                    let props = feature.properties;
+                    let popupContent = `
+                        <h3 style="margin:0 0 5px 0; font-size:14px; border-bottom:1px solid #ccc;">Ad Details</h3>
+                        <strong>Type:</strong> ${adTypeMap[props.ad_type]||'N/A'}<br>
+                        <strong>Category:</strong> ${adCategoryMap[props.ad_category]||'N/A'}<br>
+                        <strong>Condition:</strong> ${conditionMap[props.condition]||'N/A'}<br>
+                        <strong>Area:</strong> ${props.area_m2 ? props.area_m2+' m²' : 'N/A'}<br>
+                        <strong>Notes:</strong> ${props.notes||'None'}<br>
+                    `;
+                    layer.bindPopup(popupContent, { autoPanPadding: L.point(50, 80) });
+                }
+            }
+        });
+
+        const features = myMapData.features ? myMapData.features : (Array.isArray(myMapData) ? myMapData : [myMapData]);
+        features.forEach(feature => {
+            if (feature.properties && feature.properties.X && feature.properties.Y) {
+                const x = feature.properties.X; const y = feature.properties.Y;
+                const lng = (x / 20037508.34) * 180;
+                let lat = (y / 20037508.34) * 180;
+                lat = (180 / Math.PI) * (2 * Math.atan(Math.exp((lat * Math.PI) / 180)) - Math.PI / 2);
+                feature.geometry = { "type": "Point", "coordinates": [lng, lat] };
+                allFeaturesMemory.push(feature);
+            }
+        });
+
+        function applyFilters() {
+            dataLayer.clearLayers();
+            const selectedType = document.getElementById("filter-type").value;
+            const selectedCategory = document.getElementById("filter-category").value;
+            const selectedCondition = document.getElementById("filter-condition").value;
+
+            allFeaturesMemory.forEach(feature => {
+                const matchType = (selectedType === "all" || String(feature.properties.ad_type) === selectedType);
+                const matchCategory = (selectedCategory === "all" || String(feature.properties.ad_category) === selectedCategory);
+                const matchCondition = (selectedCondition === "all" || String(feature.properties.condition) === selectedCondition);
+                if (matchType && matchCategory && matchCondition) { dataLayer.addData(feature); }
+            });
+        }
+        document.getElementById("filter-type").addEventListener("change", applyFilters);
+        document.getElementById("filter-category").addEventListener("change", applyFilters);
+        document.getElementById("filter-condition").addEventListener("change", applyFilters);
+        applyFilters(); dataLayer.addTo(map);
+
+        // Toast Helper
+        function showToast(message) {
+            const toast = document.getElementById('map-toast');
+            toast.innerHTML = message;
+            toast.classList.add('show');
+            setTimeout(() => { toast.classList.remove('show'); }, 3500);
+        }
+
+        // -----------------------------------------------------------------
+        // ROUTE PLANNING & ALTERNATIVE OPTIMIZATION LOGIC
+        // -----------------------------------------------------------------
+        let isRouteModeActive = false;
+        let routeLineLayer = null;
+        let routePoints = [];
+        let mapMarkers = [];
+        let currentRouteCoordinates = []; 
+        
+        let isOptimizedAdFree = false; 
+        let originalRouteCoordinatesBackup = []; 
+        let originalAdCountBackup = 0;
+
+        const ORS_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjhiMTJiNDM3ODliNTQ1ZDVhMDY1YmYzNzU1NzBhMzc1IiwiaCI6Im11cm11cjY0In0=';
+
+        document.getElementById('btn-route-toggle').addEventListener('click', function() {
+            isRouteModeActive = !isRouteModeActive;
+            if(isRouteModeActive) {
+                this.textContent = "Mode: Active (Click Map)";
+                this.style.background = "#4CAF50";
+                document.getElementById('btn-route-clear').style.display = "block";
+                map.getContainer().style.cursor = "crosshair";
+            } else {
+                deactivateRouteMode();
+            }
+        });
+
+        document.getElementById('btn-route-clear').addEventListener('click', function() {
+            const clearBtn = document.getElementById('btn-route-clear');
+            clearBtn.textContent = "Clearing Route...";
+            clearBtn.style.background = "#7f8c8d";
+            clearBtn.disabled = true;
+
+            setTimeout(() => {
+                if (routeLineLayer) { map.removeLayer(routeLineLayer); routeLineLayer = null; }
+                mapMarkers.forEach(marker => map.removeLayer(marker));
+                mapMarkers = [];
+                routePoints = [];
+                currentRouteCoordinates = [];
+                isOptimizedAdFree = false;
+                originalRouteCoordinatesBackup = [];
+                originalAdCountBackup = 0;
+                map.closePopup();
+
+                clearBtn.textContent = "Clear Route";
+                clearBtn.style.background = "#2196F3";
+                clearBtn.style.display = "none";
+                clearBtn.disabled = false;
+                deactivateRouteMode();
+            }, 50);
+        });
+
+        function deactivateRouteMode() {
+            isRouteModeActive = false;
+            const btn = document.getElementById('btn-route-toggle');
+            btn.textContent = "Activate Route Mode";
+            btn.style.background = "#2196F3";
+            map.getContainer().style.cursor = "";
+        }
+
+        map.on('click', function(e) {
+            if (!isRouteModeActive) return;
+            if (routePoints.length >= 2) return;
+
+            routePoints.push(e.latlng);
+            const marker = L.marker(e.latlng, { title: routePoints.length === 1 ? "Start" : "End" }).addTo(map);
+            mapMarkers.push(marker);
+
+            if (routePoints.length === 2) {
+                isOptimizedAdFree = false;
+                calculateRouteDirectly();
+            }
+        });
+
+        function calculateRouteDirectly(avoidPolygonsJson = null, viaWaypoint = null, isEvaluatingAlternative = false) {
+            map.closePopup();
+            if (routeLineLayer) { map.removeLayer(routeLineLayer); }
+
+            const startCoords = [routePoints[0].lng, routePoints[0].lat];
+            const endCoords = [routePoints[1].lng, routePoints[1].lat];
+            
+            const url = `https://api.openrouteservice.org/v2/directions/foot-walking/geojson?api_key=${ORS_API_KEY}`;
+            
+            let bodyPayload = {
+                coordinates: viaWaypoint ? [startCoords, [viaWaypoint.lng, viaWaypoint.lat], endCoords] : [startCoords, endCoords]
+            };
+
+            if (avoidPolygonsJson) {
+                bodyPayload.options = { avoid_polygons: avoidPolygonsJson };
+            }
+
+            fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(bodyPayload)
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.features && data.features.length > 0) {
+                    const coordinates = data.features[0].geometry.coordinates;
+                    const latLngs = coordinates.map(coord => [coord[1], coord[0]]);
+                    const proposedRoute = latLngs.map(pt => ({ lat: pt[0], lng: pt[1] }));
+                    
+                    if (isEvaluatingAlternative) {
+                        let alternativeStats = checkRouteExposureMetrics(proposedRoute);
+                        
+                        if (alternativeStats.count >= originalAdCountBackup) {
+                            showToast("ℹ️ Your walking route is already the most ad-free option available!");
+                            currentRouteCoordinates = originalRouteCoordinatesBackup;
+                            drawRouteLine(originalRouteCoordinatesBackup);
+                            isOptimizedAdFree = false; 
+                        } else {
+                            currentRouteCoordinates = proposedRoute;
+                            drawRouteLine(proposedRoute);
+                        }
+                    } else {
+                        currentRouteCoordinates = proposedRoute;
+                        originalRouteCoordinatesBackup = proposedRoute;
+                        drawRouteLine(proposedRoute);
+                    }
+                } else {
+                    if (avoidPolygonsJson) {
+                        showToast("ℹ️ Your walking route is already the most ad-free option available!");
+                        currentRouteCoordinates = originalRouteCoordinatesBackup;
+                        drawRouteLine(originalRouteCoordinatesBackup);
+                        isOptimizedAdFree = false;
+                    }
+                }
+            })
+            .catch(err => showToast("❌ Error communicating with the routing provider."));
+        }
+
+        function drawRouteLine(pointsArray) {
+            if (routeLineLayer) { map.removeLayer(routeLineLayer); }
+            const latLngs = pointsArray.map(pt => [pt.lat, pt.lng]);
+            routeLineLayer = L.polyline(latLngs, { color: '#2196F3', opacity: 0.8, weight: 6 }).addTo(map);
+            analyzeAdExposure(pointsArray);
+        }
+
+        // -----------------------------------------------------------------
+        // METRICS CALCULATOR ENGINE
+        // -----------------------------------------------------------------
+        function checkRouteExposureMetrics(routeCoords) {
+            let totalArea = 0; let totalCount = 0; let categoryCounts = {};
+            const bufferDistance = 25;
+
+            allFeaturesMemory.forEach(feature => {
+                const adLng = feature.geometry.coordinates[0]; const adLat = feature.geometry.coordinates[1];
+                let isNearRoute = false;
+
+                for (let i = 0; i < routeCoords.length; i++) {
+                    const dist = getDistanceInMeters(adLat, adLng, routeCoords[i].lat, routeCoords[i].lng);
+                    if (dist <= bufferDistance) { isNearRoute = true; break; }
+                }
+
+                if (isNearRoute) {
+                    totalCount++;
+                    totalArea += parseFloat(feature.properties.area_m2 || 0);
+                    let catName = adCategoryMap[feature.properties.ad_category] || "Other";
+                    categoryCounts[catName] = (categoryCounts[catName] || 0) + 1;
+                }
+            });
+            return { count: totalCount, area: totalArea, chartData: categoryCounts };
+        }
+
+        function triggerAdFreeAlternative() {
+            if (currentRouteCoordinates.length === 0 || isOptimizedAdFree) return;
+            
+            isOptimizedAdFree = true;
+            let currentStats = checkRouteExposureMetrics(currentRouteCoordinates);
+            originalAdCountBackup = currentStats.count;
+
+            let badZones = [];
+            const blockRadiusDegree = 0.0004; 
+
+            allFeaturesMemory.forEach(feature => {
+                const adLng = feature.geometry.coordinates[0]; const adLat = feature.geometry.coordinates[1];
+                let hitsPath = false;
+
+                for (let i = 0; i < currentRouteCoordinates.length; i++) {
+                    const dist = getDistanceInMeters(adLat, adLng, currentRouteCoordinates[i].lat, currentRouteCoordinates[i].lng);
+                    if (dist <= 25) { hitsPath = true; break; }
+                }
+
+                if (hitsPath) {
+                    badZones.push([
+                        [adLng - blockRadiusDegree, adLat - blockRadiusDegree],
+                        [adLng + blockRadiusDegree, adLat - blockRadiusDegree],
+                        [adLng + blockRadiusDegree, adLat + blockRadiusDegree],
+                        [adLng - blockRadiusDegree, adLat + blockRadiusDegree],
+                        [adLng - blockRadiusDegree, adLat - blockRadiusDegree]
+                    ]);
+                }
+            });
+
+            if (badZones.length > 0) {
+                const avoidGeoJson = {
+                    type: "MultiPolygon",
+                    coordinates: badZones.slice(0, 15).map(zone => [zone])
+                };
+                calculateRouteDirectly(avoidGeoJson, null, true);
+            } else {
+                showToast("ℹ️ Your walking route is already the most ad-free option available!");
+                isOptimizedAdFree = false;
+            }
+        }
+
+        function triggerTargetedAdDetour(selectedCategoryCode) {
+            if (!selectedCategoryCode) return;
+            isOptimizedAdFree = false; 
+            
+            let targetPoint = null; let closestDistanceToCenter = 999999;
+            const midLat = (routePoints[0].lat + routePoints[1].lat) / 2;
+            const midLng = (routePoints[0].lng + routePoints[1].lng) / 2;
+
+            allFeaturesMemory.forEach(feat => {
+                if (String(feat.properties.ad_category) === String(selectedCategoryCode)) {
+                    const adLat = feat.geometry.coordinates[1]; const adLng = feat.geometry.coordinates[0];
+                    const dist = getDistanceInMeters(midLat, midLng, adLat, adLng);
+                    if (dist < closestDistanceToCenter) {
+                        closestDistanceToCenter = dist; targetPoint = { lat: adLat, lng: adLng };
+                    }
+                }
+            });
+
+            if (targetPoint) {
+                calculateRouteDirectly(null, targetPoint, false);
+            } else {
+                showToast("⚠️ No ads of this category found nearby.");
+            }
+        }
+
+        function getDistanceInMeters(lat1, lon1, lat2, lon2) {
+            const R = 6371e3; 
+            const phi1 = lat1 * Math.PI/180; const phi2 = lat2 * Math.PI/180;
+            const deltaPhi = (lat2-lat1) * Math.PI/180; const deltaLambda = (lon2-lon1) * Math.PI/180;
+            const a = Math.sin(deltaPhi/2) * Math.sin(deltaPhi/2) + Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda/2) * Math.sin(deltaLambda/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        function generateComparisonText(areaSquareMeters) {
+            if (areaSquareMeters <= 0) return "You encountered no visual advertisement pollution along this path.";
+            const tennisCourt = 261; const parkingSpace = 12.5; 
+            if (areaSquareMeters >= tennisCourt * 0.5) {
+                return `That's equivalent to walking past the surface area of <strong>${(areaSquareMeters / tennisCourt).toFixed(1)} tennis courts</strong> covered entirely in advertisements!`;
+            } else {
+                return `That surface area matches a continuous wall of advertisements spanning the size of <strong>${Math.round(areaSquareMeters / parkingSpace) || 1} standard city parking spaces</strong>.`;
+            }
+        }
+
+        function analyzeAdExposure(routeCoords) {
+            const stats = checkRouteExposureMetrics(routeCoords);
+            displayAnalysisPopup(routeCoords[Math.floor(routeCoords.length / 2)], stats.count, stats.area, stats.chartData);
+        }
+
+        function displayAnalysisPopup(centerLatLng, count, area, chartData) {
+            const popupId = "popup-chart-canvas";
+            const comparisonText = generateComparisonText(area);
+            
+            let selectOptions = `<option value="">-- Choose Category --</option>`;
+            for (let code in adCategoryMap) {
+                selectOptions += `<option value="${code}">${adCategoryMap[code]}</option>`;
+            }
+
+            const buttonText = isOptimizedAdFree ? "✨ Walk Optimized" : "✨ Make My Walk More Ad-Free";
+            const isButtonDisabled = isOptimizedAdFree ? "disabled" : "";
+
+            const popupHtml = `
+                <div style="width:260px;">
+                    <h3 style="margin:0 0 5px 0; font-size:15px; color:#333;">Route Ad Exposure</h3>
+                    <strong>Total Ads:</strong> ${count} | <strong>Area:</strong> ${area.toFixed(1)} m²
+                    <div class="comparison-box">${comparisonText}</div>
+                    
+                    <button class="popup-action-btn btn-optimize" ${isButtonDisabled} onclick="triggerAdFreeAlternative()">${buttonText}</button>
+                    
+                    <div class="popup-select-group">
+                        <label>🎯 I want to see more ads about:</label>
+                        <select id="popup-cat-redirect" onchange="triggerTargetedAdDetour(this.value)">
+                            ${selectOptions}
+                        </select>
+                    </div>
+
+                    <div class="chart-container"><canvas id="${popupId}"></canvas></div>
+                </div>
+            `;
+
+            // autoPanPadding ensures the map scrolls down dynamically to avoid the title bar completely
+            L.popup({ autoPanPadding: L.point(50, 90) })
+                .setLatLng(centerLatLng)
+                .setContent(popupHtml)
+                .openOn(map);
+
+            setTimeout(() => {
+                const canvas = document.getElementById(popupId);
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                new Chart(ctx, {
+                    type: 'pie',
+                    data: {
+                        labels: Object.keys(chartData),
+                        datasets: [{
+                            data: Object.values(chartData),
+                            backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#8bc34a']
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                });
+            }, 150);
+        }
+
+        const baseMaps = { "OpenStreetMap": osm, "Satellite": satellite };
+        const overlayMaps = { "Advertisement": dataLayer };
+        L.control.layers(baseMaps, overlayMaps).addTo(map);
+    </script>
+</body>
+</html>
