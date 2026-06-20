@@ -2,7 +2,7 @@
 
 The dataset and map layout in this repository are licensed under the Creative Commons Attribution 4.0 International License (CC BY 4.0).
 
-Copyright (c) 2026 Your Name
+Copyright (c) 2026 Nelly Dorrmann & Leander Vieten
 
 You are free to:
 - **Share:** Copy and redistribute the material in any medium or format.
